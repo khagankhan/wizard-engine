@@ -451,7 +451,7 @@ class V3Interpreter extends WasmStack {
 				var table_index = codeptr.read_uleb31();
 				Runtime.TABLE_SET(this, frame.func.instance, table_index);
 			}
-
+			
 			I32_LOAD 	=> doLoad(4, DataReaders.read_range_u32, Value.I32);
 			I64_LOAD 	=> doLoad(8, DataReaders.read_range_u64, Value.I64);
 			F32_LOAD 	=> doLoad(4, DataReaders.read_range_u32, Value.F32);
@@ -466,6 +466,7 @@ class V3Interpreter extends WasmStack {
 			I64_LOAD16_U	=> doLoad(2, DataReaders.read_range_u64_u16, Value.I64);
 			I64_LOAD32_S	=> doLoad(4, DataReaders.read_range_u64_i32, Value.I64);
 			I64_LOAD32_U	=> doLoad(4, DataReaders.read_range_u64_u32, Value.I64);
+			I32_ATOMIC_LOAD => doAtomicLoad(4, DataReaders.read_range_u32, Value.I32);
 			I32_STORE	=> doStore(4, DataWriters.write_range_u32, Values.v_u);
 			I64_STORE	=> doStore(8, DataWriters.write_range_u64, Values.v_w);
 			F32_STORE	=> doStore(4, DataWriters.write_range_u32, Values.v_f);
@@ -1125,11 +1126,30 @@ class V3Interpreter extends WasmStack {
 		if (!u32.?(memarg.offset)) return MaybeTrap<Range<byte>>(null, TrapReason.MEM_OUT_OF_BOUNDS);
 		return memory.range_oil_32(u32.!(memarg.offset), u32.!(index), size);
 	}
+
 	def doLoad<T>(size: byte, read: Range<byte> -> T, box: T -> Value) {
 		var t = doLoadReg(size);
 		if (t.reason != TrapReason.NONE) return void(trap(t.reason));
 		else push(box(read(t.result)));
 	}
+
+	def doAtomicLoadReg<T>(size: byte) -> MaybeTrap<Range<byte>> {
+    	var memarg = codeptr.read_MemArg();
+		var memory = frame.func.instance.memories[memarg.memory_index];
+		var index = popm(memory);
+		if (!u32.?(index)) return MaybeTrap<Range<byte>>(null, TrapReason.MEM_OUT_OF_BOUNDS);
+		if (!u32.?(memarg.offset)) return MaybeTrap<Range<byte>>(null, TrapReason.MEM_OUT_OF_BOUNDS);
+		return memory.range_oil_32(u32.!(memarg.offset), u32.!(index), size);
+	}
+
+	def doAtomicLoad<T>(size: byte, read: Range<byte> -> T, box: T -> Value) {
+		var t = doAtomicLoadReg(size);
+		if (t.reason != TrapReason.NONE) return void(trap(t.reason));
+		else {
+			push(box(read(t.result))); // Suppose "read" function is atomic in Virgil.
+		}
+	}
+
 	def doLoadLane<T>(size: byte, log2_size: u3, read: Range<byte> -> T) {
 		var v = Values.v_s(pop());
 		var t = doLoadReg(size);
